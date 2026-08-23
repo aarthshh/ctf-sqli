@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureVault™ — Employee Portal</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      background: #0a0a0a;
+      color: #c0c0c0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 420px;
+      padding: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.1rem;
+      color: #00ff88;
+      margin-bottom: .25rem;
+    }
+
+    .subtitle {
+      font-size: .75rem;
+      color: #555;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Login form ────────────────────────────── */
+    #login-section label {
+      display: block;
+      font-size: .75rem;
+      color: #888;
+      margin-bottom: .2rem;
+      margin-top: .75rem;
+    }
+
+    #login-section input {
+      width: 100%;
+      padding: .5rem;
+      background: #111;
+      border: 1px solid #333;
+      color: #eee;
+      font-family: inherit;
+      font-size: .85rem;
+    }
+
+    #login-section input:focus {
+      outline: none;
+      border-color: #00ff88;
+    }
+
+    button {
+      margin-top: 1rem;
+      width: 100%;
+      padding: .55rem;
+      background: #00ff88;
+      color: #000;
+      border: none;
+      font-family: inherit;
+      font-weight: bold;
+      font-size: .85rem;
+      cursor: pointer;
+    }
+
+    button:hover { background: #00cc6a; }
+
+    /* ── Output log ────────────────────────────── */
+    #output {
+      margin-top: 1.25rem;
+      padding: .75rem;
+      background: #111;
+      border: 1px solid #222;
+      font-size: .78rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 2rem;
+      display: none;
+    }
+
+    #output.visible { display: block; }
+
+    .err  { color: #ff4444; }
+    .ok   { color: #00ff88; }
+    .info { color: #888; }
+
+    /* ── Admin panel ───────────────────────────── */
+    #admin-section {
+      display: none;
+      margin-top: 1.5rem;
+      border-top: 1px solid #222;
+      padding-top: 1rem;
+    }
+
+    #admin-section h2 {
+      font-size: .9rem;
+      color: #00ff88;
+      margin-bottom: .5rem;
+    }
+
+    #secrets-list {
+      font-size: .78rem;
+      list-style: none;
+    }
+
+    #secrets-list li {
+      padding: .35rem 0;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    #secrets-list li span.key { color: #888; }
+    #secrets-list li span.val { color: #eee; }
+
+    a.download {
+      display: inline-block;
+      margin-top: .75rem;
+      color: #00ff88;
+      font-size: .8rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>SecureVault™</h1>
+    <p class="subtitle">Employee Login Portal v2.1</p>
+
+    <!-- Login -->
+    <div id="login-section">
+      <label for="username">USERNAME</label>
+      <input id="username" type="text" autocomplete="off" placeholder="enter username" />
+
+      <label for="password">PASSWORD</label>
+      <input id="password" type="password" placeholder="enter password" />
+
+      <button id="login-btn">LOGIN</button>
+    </div>
+
+    <div id="output"></div>
+
+    <!-- Admin panel (shown after admin login) -->
+    <div id="admin-section">
+      <h2>// admin panel</h2>
+      <ul id="secrets-list"></ul>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const out = $("#output");
+
+    function log(msg, cls = "") {
+      out.classList.add("visible");
+      out.innerHTML += `<span class="${cls}">${esc(msg)}</span>\n`;
+    }
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    // ── Login ──────────────────────────────────────
+    $("#login-btn").addEventListener("click", async () => {
+      out.innerHTML = "";
+      out.classList.remove("visible");
+      $("#admin-section").style.display = "none";
+
+      const username = $("#username").value;
+      const password = $("#password").value;
+
+      log(`> Authenticating as "${username}" ...`, "info");
+
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          log(`✗ ${data.error}`, "err");
+          return;
+        }
+
+        log(`✓ ${data.message}  (role=${data.role})`, "ok");
+
+        // If admin, auto-fetch secrets
+        if (data.role === "admin") {
+          log("> Fetching admin secrets …", "info");
+          const sRes = await fetch(`/api/secrets`);
+          const sData = await sRes.json();
+
+          if (sData.secrets) {
+            const list = $("#secrets-list");
+            list.innerHTML = "";
+            sData.secrets.forEach((s) => {
+              const li = document.createElement("li");
+              li.innerHTML = `<span class="key">${esc(s.name)}:</span> <span class="val">${esc(s.value)}</span>`;
+              list.appendChild(li);
+            });
+
+            $("#admin-section").style.display = "block";
+
+            // Add download link
+            const dl = document.createElement("a");
+            dl.href = "/download/flag";
+            dl.className = "download";
+            dl.textContent = "⬇ Download flag.zip";
+            list.parentElement.appendChild(dl);
+
+            log("✓ Flag ready for download. Check admin panel below.", "ok");
+          }
+        }
+      } catch (e) {
+        log(`✗ Network error: ${e.message}`, "err");
+      }
+    });
+
+    // Enter-key support
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") $("#login-btn").click();
+    });
+  </script>
+</body>
+</html>
